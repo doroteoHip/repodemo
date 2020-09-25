@@ -1,3 +1,131 @@
 https://www.researchgate.net/publication/251932352_Introduccion_a_la_Arquitectura_de_Software
 
 http://www.logicinaction.org/slides/  --logica
+
+
+
+package com.gs.opesospechosa.cron;
+
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+
+import org.bson.Document;
+
+import com.gs.opesospechosa.config.PropOpSospechosa;
+import com.gs.opesospechosa.dao.DaoOpeSospechosa;
+import com.gs.opesospechosa.util.log.LogCron;
+
+import jcifs.smb.NtlmPasswordAuthentication;
+import jcifs.smb.SmbFile;
+import jcifs.smb.SmbFileOutputStream;
+
+public class ClienteFTP {
+	public static void main(String[] args) throws Exception {
+		ArrayList<Document> resultadoOpesospechosa = new ArrayList<>();
+		DaoOpeSospechosa daoOpeSospechosa = new DaoOpeSospechosa();
+		resultadoOpesospechosa=(ArrayList<Document>) daoOpeSospechosa.getListaOpreacionSospechosa(); 
+		InputStream archivoOpeSospechosa = createArchivo(resultadoOpesospechosa);		
+		Date hoyDate = new Date();
+	    SimpleDateFormat formato = new SimpleDateFormat("yyyyMMdd");
+	    
+	    String hoy=PropOpSospechosa.nombreArchivo+formato.format(hoyDate).toString()+".txt";
+	    ClienteFTP tranArchivo = new ClienteFTP();//(PropCronEnrolamiento.host,PropCronEnrolamiento.usuario,PropCronEnrolamiento.clave,PropCronEnrolamiento.carpetaCompartida,hoy);
+		tranArchivo.setArchivoSMB(archivoOpeSospechosa);
+	}
+	public void setArchivoSMB(InputStream archivo) throws Exception{
+		NtlmPasswordAuthentication auth=null;
+		SmbFile sFile=null;
+	    InputStream input = null;
+	    OutputStream output = null;
+	    byte[] file=null;
+	    
+	    String host ="smb://"+"10.63.32.139";
+	    String usuario ="produccionba\\B863680";
+	    String password ="Banco/71";
+	    String rutaArchivo ="/reporteria_alnova/MEXICO/REPOSITORIO/Middleware/Actividad Sospechosa/";
+	    String nombreArchivo ="sospecha.txt";
+	    
+	    
+	    try{		
+	    	file = new byte[archivo.available()];
+		    int totalBytesRead = 0;
+			input = new BufferedInputStream(archivo);
+			while(totalBytesRead < file.length){
+		          int bytesRemaining = file.length - totalBytesRead;
+		          int bytesRead = input.read(file, totalBytesRead, bytesRemaining); 
+		          if (bytesRead > 0){
+		            totalBytesRead = totalBytesRead + bytesRead;
+		          }
+		        }
+			auth = new NtlmPasswordAuthentication(host ,usuario, password);
+			sFile = new SmbFile(host + rutaArchivo + nombreArchivo,auth);
+			System.out.println(sFile);
+			output = new BufferedOutputStream(new SmbFileOutputStream(sFile));
+			output.write(file);	
+			output.flush();
+			output.close();
+		}catch (Exception e) {			
+			throw new Exception("No fue posible depositar el archivo "+ rutaArchivo +", "+e); 						
+		}finally{
+			auth = null;
+			sFile = null;			
+			auth=null;
+			closeInputStream(archivo);			
+        }
+	}
+    
+    private void closeInputStream(InputStream archivo){
+    	  try {
+    		  if(archivo != null){
+    			  archivo.close();
+    		  }    		 
+  			} catch (IOException e) {
+  				 LogCron.mensaje("[" + this.getClass().getCanonicalName()+ "][closeInputStream] No se pudo cerrar el InputStream del archivo "); 
+  				 
+  			}
+     }
+    
+    private static InputStream createArchivo(ArrayList<Document> resultadoOpeSospechosa) {
+		Date today = new Date();
+		SimpleDateFormat formato = new SimpleDateFormat("yyyy-MM-dd");
+		String hoy = formato.format(today).toString();
+		StringBuffer sbf = new StringBuffer();
+		for (Document document : resultadoOpeSospechosa) {
+			 String nombre="";
+			 String idNegocio="";
+			 if(null != document.get("nombre_cliente"))
+				 nombre= document.get("nombre_cliente").toString().trim();
+			 
+				if(null != document.get("id_negocio"))
+					idNegocio= document.get("id_negocio").toString().trim();
+					
+				String fecha=document.get("fecha").toString().trim();
+				String [] fechaSeparada= fecha.split("T");
+				
+				sbf.append(
+						hoy+"|"+
+					    document.get("id_pais")+"|"+
+					    document.get("canal")+"|"+
+					    document.get("sucursal")+"|"+
+					    fechaSeparada[0].toString()+"|"+
+					    document.get("cajero")+"|"+
+					    document.get("descripcion_reporte").toString().replace("|", " ").replace(",", " ")+"|"+
+					    document.get("transaccion")+"|"+
+					    document.get("id_cliente")+"|"+
+					    nombre+"|"+
+					    System.getProperty("line.separator"));
+				
+			 }
+			 
+			 byte[] bytes = sbf.toString().getBytes(); 
+			 
+			return new ByteArrayInputStream(bytes);
+		}
+}
